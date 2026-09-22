@@ -57,14 +57,21 @@ describe('assert y resolve', () => {
     }
   });
 
-  it('resolvePolicies rellena lo que parse deja fuera', () => {
+  it('resolvePolicies rellena todas las secciones que parse deja fuera', () => {
     expect(resolvePolicies({})).toEqual({
       version: 1,
+      cache: { mode: 'off', ttl_seconds: null, min_similarity: null },
       firewall: {
         inbound: { default_action: 'allow', rules: [] },
         outbound: { default_action: 'allow', rules: [] },
       },
     });
+  });
+
+  it('resolve rellena una sección sin tocar la otra', () => {
+    const resolved = resolvePolicies({ cache: { mode: 'strict', ttl_seconds: 60 } });
+    expect(resolved.cache.ttl_seconds).toBe(60);
+    expect(resolved.firewall.inbound.rules).toEqual([]);
   });
 
   it('resolve no pisa lo que sí estaba configurado', () => {

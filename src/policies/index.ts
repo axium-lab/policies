@@ -1,5 +1,6 @@
 import type { z } from 'zod';
 
+import { cacheSection } from './cache.js';
 import { firewallSection } from './firewall.js';
 
 /**
@@ -7,6 +8,7 @@ import { firewallSection } from './firewall.js';
  * plus one line here; nothing else in the package names a section explicitly.
  */
 export const SECTIONS = {
+  cache: cacheSection,
   firewall: firewallSection,
 } as const;
 

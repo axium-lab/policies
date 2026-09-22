@@ -86,7 +86,7 @@ desconocida sí es un error.
 | Policy | Estado |
 |---|---|
 | `firewall` | ✅ |
-| `cache` | pendiente |
+| `cache` | ✅ |
 | `capture` | pendiente |
 | `geo` | pendiente |
 | `dlp` | pendiente |

@@ -76,7 +76,8 @@ sitio donde se define. **Cada lista hay que validarla antes de congelarla.**
 | Campo | Valores | Procedencia |
 |---|---|---|
 | `cache.mode` | `off` \| `strict` \| `semantic` | ✅ Real: `rm.cache_mode_enum` en Postgres |
-| `cache.ttl_seconds` | `number \| null` | Propuesta |
+| `cache.ttl_seconds` | entero 1 – 2 592 000 (30 días), o `null` | ✅ decidido en la fase 2 |
+| `cache.min_similarity` | 0 – 1, default `0.95` | ✅ decidido en la fase 2 |
 | `capture.samples` | `boolean` | Propuesta |
 | `dlp.rules[].category` | `dni`, + ? | Solo `dni`, en un comentario. **A definir** |
 | `dlp.rules[].action` | `anonymize` \| `block` | Comentario, sin confirmar |
@@ -84,10 +85,14 @@ sitio donde se define. **Cada lista hay que validarla antes de congelarla.**
 | `geo.on_violation` | `block` \| `log` | Propuesta (`log` añadido para poder desplegar en modo observación) |
 | `transformations[].type` | `pdf_to_markdown`, + ? | Solo ese, en un comentario. **A definir** |
 
-**`semantic` está reservado pero no implementado** (requiere pgvector y una tabla de
-embeddings que se decidió no crear). Propuesta: aceptarlo como valor sintácticamente válido
-pero emitir un **warning no bloqueante** (§6), para que la API pueda rechazarlo en runtime
-sin que la librería mienta sobre el enum real de Postgres.
+**`semantic` se acepta como valor de primera** (decisión de la fase 2). Que la interfaz lo
+enseñe o no es cosa del front; la librería exporta `CACHE_MODES` con los tres. Aceptarlo aquí
+no crea la tabla de embeddings: el runtime del proxy tiene que poder honrarlo.
+
+`semantic` **incluye a `strict`**: primero coincidencia exacta por hash, y solo si falla la
+búsqueda vectorial. No son alternativas, es un segundo intento después del primero — saltarse
+el paso exacto paga un embedding por peticiones que una consulta por hash ya resolvía. Por eso
+sigue siendo un enum de tres valores y no dos cachés conviviendo.
 
 **`geo`**: propongo que la librería expanda el alias `EU` a la lista de códigos de país,
 de forma que el runtime compare siempre contra códigos ISO y el alias sea azúcar de
@@ -293,8 +298,9 @@ desde aquí es gratis, pero aprovecharlo implica tocar `ErrorDetail` en la API. 
 
 Donde está el valor real, más allá de comprobar tipos:
 
-- `cache.mode: "off"` ⇒ `ttl_seconds` debe ser `null`
-- `cache.mode: "strict" | "semantic"` ⇒ `ttl_seconds` requerido y > 0
+- `cache.mode: "off"` ⇒ `ttl_seconds` y `min_similarity` a `null`
+- `cache.mode: "strict"` ⇒ `ttl_seconds` requerido; `min_similarity` a `null`
+- `cache.mode: "semantic"` ⇒ `ttl_seconds` requerido; `min_similarity` se rellena a `0.95`
 - `geo.on_violation: "block"` ⇒ `geo.allow` no puede estar vacío (bloquearía todo)
 - `dlp.rules[]` ⇒ sin `category` duplicada
 - `firewall` ⇒ CIDR/IP/dominio bien formados; reglas sombreadas como warning
@@ -345,6 +351,11 @@ Un documento sin `version` se trata como v1 (es el caso de las filas con el defa
 
 Resueltas en la fase 1: forma del firewall (reglas ordenadas), direcciones (ambas),
 defaults (sección ausente si no se configuró), zod 4, sin dependencias.
+
+Descartado explícitamente: un `cache.scope` que controlase qué entra en la clave de caché
+(app / api_key / usuario final). Queda como comportamiento implícito del runtime del proxy.
+Con `semantic` activo, dos prompts *parecidos* de usuarios distintos comparten respuesta, así
+que el aislamiento entre peticiones lo decide el proxy, no la policy.
 
 Pendientes:
 

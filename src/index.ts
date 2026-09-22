@@ -15,5 +15,13 @@ export type {
   SectionKey,
 } from './types/index.js';
 
+export {
+  CACHE_DEFAULT_MIN_SIMILARITY,
+  CACHE_MODES,
+  CACHE_TTL_MAX_SECONDS,
+  CACHE_TTL_MIN_SECONDS,
+} from './policies/cache.js';
+export type { CacheMode, CachePolicy } from './policies/cache.js';
+
 export { FIREWALL_ACTIONS, FIREWALL_MAX_RULES, FIREWALL_RULE_TYPES } from './policies/firewall.js';
 export type { FirewallPolicy, FirewallRule } from './policies/firewall.js';
