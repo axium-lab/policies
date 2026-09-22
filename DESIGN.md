@@ -78,7 +78,7 @@ sitio donde se define. **Cada lista hay que validarla antes de congelarla.**
 | `cache.mode` | `off` \| `strict` \| `semantic` | ✅ Real: `rm.cache_mode_enum` en Postgres |
 | `cache.ttl_seconds` | entero 1 – 2 592 000 (30 días), o `null` | ✅ decidido en la fase 2 |
 | `cache.min_similarity` | 0 – 1, default `0.95` | ✅ decidido en la fase 2 |
-| `capture.samples` | `boolean` | Propuesta |
+| `capture.samples` | `boolean`, default `false` | ✅ decidido en la fase 3 |
 | `dlp.rules[].category` | `dni`, + ? | Solo `dni`, en un comentario. **A definir** |
 | `dlp.rules[].action` | `anonymize` \| `block` | Comentario, sin confirmar |
 | `geo.allow[]` | `EU` + ISO 3166-1 alpha-2 | **Inventado en diseño.** Requisito real: "denegar fuera de Europa" |
@@ -164,6 +164,9 @@ posterior) y `firewall.blocks_all_traffic` (`0.0.0.0/0` o `::/0` en un `deny`).
 
 `firewall.inbound` y `geo` son **dos puertas independientes: la petición pasa las dos**.
 Un `allow` explícito en el firewall **no** salta el bloqueo geográfico.
+
+Recomendación sin decidir (`capture`): capturar la muestra **después** de que actúe `dlp`.
+Guardarla antes persiste justo lo que la policy de DLP decía anonimizar.
 
 ## 5. Superficie de la API
 

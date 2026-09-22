@@ -87,7 +87,7 @@ desconocida sí es un error.
 |---|---|
 | `firewall` | ✅ |
 | `cache` | ✅ |
-| `capture` | pendiente |
+| `capture` | ✅ |
 | `geo` | pendiente |
 | `dlp` | pendiente |
 | `transformations` | pendiente |

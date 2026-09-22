@@ -1,6 +1,7 @@
 import type { z } from 'zod';
 
 import { cacheSection } from './cache.js';
+import { captureSection } from './capture.js';
 import { firewallSection } from './firewall.js';
 
 /**
@@ -9,6 +10,7 @@ import { firewallSection } from './firewall.js';
  */
 export const SECTIONS = {
   cache: cacheSection,
+  capture: captureSection,
   firewall: firewallSection,
 } as const;
 

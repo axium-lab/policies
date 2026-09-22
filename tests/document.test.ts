@@ -61,6 +61,7 @@ describe('assert y resolve', () => {
     expect(resolvePolicies({})).toEqual({
       version: 1,
       cache: { mode: 'off', ttl_seconds: null, min_similarity: null },
+      capture: { samples: false },
       firewall: {
         inbound: { default_action: 'allow', rules: [] },
         outbound: { default_action: 'allow', rules: [] },
