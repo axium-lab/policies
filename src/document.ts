@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { SECTIONS, type SectionKey, type SectionSchema } from './registry.js';
+import { SECTIONS, type SectionKey, type SectionSchema } from './policies/index.js';
 
 export const POLICY_VERSION = 1;
 
@@ -23,13 +23,6 @@ export const policiesSchema = z.looseObject({
   version: z.literal(POLICY_VERSION).default(POLICY_VERSION),
   ...sectionShape,
 });
-
-export type Policies = z.infer<typeof policiesSchema>;
-
-type SectionOutputs = { [Key in SectionKey]: z.output<SectionSchema<Key>> };
-
-/** Every section present, for the runtime that has to act on a decision. */
-export type ResolvedPolicies = Omit<Policies, SectionKey> & SectionOutputs;
 
 /**
  * JSON Schema for building forms. Derived from the *input* side: the front submits

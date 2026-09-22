@@ -168,9 +168,13 @@ Funciona, pero N tipos × M operaciones = 30-40 funciones escritas a mano, y añ
 sección obliga a tocar cinco sitios. El riesgo no es el volumen: es que una de esas
 funciones se desincronice del validador.
 
-En su lugar, **registro de secciones**: cada sección se declara una vez
-(`{ key, schema, defaults }`) y de ahí salen los tipos, el validador, los defaults y el
-JSON Schema. Añadir `firewall` = un fichero nuevo + una línea en el registro.
+En su lugar, cada sección cumple el contrato `PolicySection` (`src/types/section.ts`) y
+se declara una sola vez en su propio fichero: schema, defaults, reglas entre campos y
+warnings juntos. `src/policies/index.ts` las lista en `SECTIONS`, y de ahí salen los tipos,
+el validador, los defaults y el JSON Schema.
+
+**Añadir una policy = un fichero nuevo en `src/policies/` + una línea en `SECTIONS`.**
+Ningún otro fichero del paquete nombra una sección explícitamente.
 
 ### Validación (el 90% del uso del backend)
 
@@ -198,8 +202,6 @@ const doc = policy()
   .remove('capture')
   .build();                              // valida y materializa defaults
 
-// Azúcar derivada del registro, no escrita a mano:
-policy().cache({ mode: 'off' }).firewall({ default_action: 'deny', rules: [] }).build();
 ```
 
 Inmutable y encadenable: cada `.set()` devuelve un builder nuevo. `set(kind, value)` da el
@@ -221,6 +223,45 @@ Que los catálogos se exporten evita que el front los duplique hardcodeados y se
 todos vía `z.infer` — nunca escritos a mano en paralelo al schema.
 
 ---
+
+## 5b. Estructura de ficheros
+
+```
+src/
+├── index.ts              única superficie pública: solo re-exporta
+├── document.ts           sobre raíz + policiesJsonSchema()
+├── parse.ts              parsePolicies / assertPolicies / resolvePolicies
+├── builder.ts            policy().set().build()
+├── errors.ts             fromZodError, PolicyValidationError
+│
+├── types/                contratos transversales
+│   ├── index.ts          barrel
+│   ├── issue.ts          PolicyIssue
+│   ├── section.ts        PolicySection
+│   ├── document.ts       Policies, ResolvedPolicies
+│   ├── result.ts         ParseResult
+│   └── builder.ts        PolicyBuilder
+│
+├── policies/             una policy por fichero
+│   ├── index.ts          SECTIONS + los tipos derivados de SECTIONS
+│   └── firewall.ts
+│
+└── internal/             primitivas, no exportadas
+    ├── ip.ts
+    └── domain.ts
+```
+
+Dos reglas mantienen esto ordenado:
+
+- **Las dependencias van en un solo sentido** y `policies/*` nunca se importan entre sí.
+  Si dos policies necesitan hablarse, la lógica sube a `document.ts`.
+- **`types/` guarda solo contratos transversales.** Un tipo derivado de un schema concreto
+  (`FirewallPolicy`) se queda en el fichero de su policy, y lo derivado de `SECTIONS`
+  (`SectionKey`, `SectionInput`) vive junto a `SECTIONS`. Mover esos a `types/` invertiría
+  las dependencias y devolvería los ciclos.
+
+No se divide por `type` vs `interface`: es una frontera de sintaxis, no de dominio, y
+obligaría a cambiar de fichero el día que un `interface` tenga que pasar a `type`.
 
 ## 6. Errores y warnings
 

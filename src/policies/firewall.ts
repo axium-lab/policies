@@ -1,9 +1,10 @@
 import { z } from 'zod';
 
-import { issue, type PolicyIssue } from '../errors.js';
+import { issue } from '../errors.js';
 import { domainContains, domainsOverlap, parseDomain, type DomainMatcher } from '../internal/domain.js';
 import { parseCidr, rangeContains, rangesOverlap, type CidrRange } from '../internal/ip.js';
-import type { PolicySection } from '../registry.js';
+import type { PolicyIssue } from '../types/issue.js';
+import type { PolicySection } from '../types/section.js';
 
 export const FIREWALL_ACTIONS = ['allow', 'deny'] as const;
 export const FIREWALL_RULE_TYPES = ['cidr', 'domain'] as const;

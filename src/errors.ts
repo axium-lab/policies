@@ -1,16 +1,6 @@
 import type { ZodError } from 'zod';
 
-/**
- * A single validation problem. `path` is for marking the field in a form; `field`
- * is the dotted string the API already returns in `details[].field`; `code` is
- * stable and safe to key translations off.
- */
-export interface PolicyIssue {
-  path: (string | number)[];
-  field: string;
-  code: string;
-  message: string;
-}
+import type { PolicyIssue } from './types/issue.js';
 
 export function toField(path: readonly (string | number)[]): string {
   return path.length === 0 ? '(root)' : path.join('.');

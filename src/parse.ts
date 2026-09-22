@@ -1,10 +1,9 @@
-import { fromZodError, PolicyValidationError, type PolicyIssue } from './errors.js';
-import { policiesSchema, type Policies, type ResolvedPolicies } from './document.js';
-import { SECTIONS } from './registry.js';
-
-export type ParseResult =
-  | { ok: true; value: Policies; warnings: PolicyIssue[] }
-  | { ok: false; errors: PolicyIssue[] };
+import { policiesSchema } from './document.js';
+import { fromZodError, PolicyValidationError } from './errors.js';
+import { SECTIONS } from './policies/index.js';
+import type { Policies, ResolvedPolicies } from './types/document.js';
+import type { PolicyIssue } from './types/issue.js';
+import type { ParseResult } from './types/result.js';
 
 type AnySection = {
   key: string;
