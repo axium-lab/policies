@@ -1,18 +1,27 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2022"],
+    "lib": ["ES2022", "DOM"],
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "types": ["node"],
+
+    // Empty on purpose: the package is isomorphic, so nothing may reach for a
+    // Node global. `DOM` above is only there for the platform `URL`.
+    "types": [],
 
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
     "noImplicitOverride": true,
     "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
 
     "verbatimModuleSyntax": true,
+
+    // Deja que los tests importen el especificador publicado y sigan
+    // comprobándose contra el working tree. Espeja el alias de vitest.config.ts.
+    "paths": { "@axium-lab/policies": ["./src/index.ts"] },
 
     "declaration": true,
     "skipLibCheck": true,
@@ -22,6 +31,6 @@
     // tsup emits; tsc only typechecks.
     "noEmit": true
   },
-  "include": ["src"],
+  "include": ["src", "tests"],
   "exclude": ["node_modules", "dist"]
 }

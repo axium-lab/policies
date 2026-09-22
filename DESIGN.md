@@ -1,6 +1,6 @@
 # axium-policies — diseño
 
-> Estado: **propuesta para discusión**. No hay código escrito todavía.
+> Estado: **fase 1 (firewall) implementada**. Fases 2-6 pendientes.
 > Última actualización: 2026-09-22
 
 Librería TypeScript para **componer y validar documentos de policy** de un proxy app.
@@ -26,7 +26,8 @@ Datos verificados contra el repo de la API (sesión `api`, solo lectura):
 ### Decisiones tomadas
 
 1. **Firewall** = capa de red (dominios / IPs / CIDRs). Es nuevo, no existe nada en el repo.
-2. **Se persiste el documento completo** con los defaults materializados.
+2. **Una sección existe solo si se configuró.** Dentro de una sección que existe, los
+   defaults sí se materializan. Una app sin configurar es `{ "version": 1 }`.
 3. **Zod 4**, y la API se adapta. → ver acción pendiente en §8.
 4. **La librería la importa también el frontend** ⇒ isomorfa, sin dependencias de `node:*`.
 
@@ -47,7 +48,10 @@ Datos verificados contra el repo de la API (sesión `api`, solo lectura):
 ```
 
 - **Entrada**: todas las secciones opcionales (una fila existente puede ser `{}`).
-- **Salida de `parse()`**: documento completo, defaults materializados, orden de claves estable.
+- **Salida de `parse()`**: las secciones ausentes siguen ausentes; las presentes van
+  completas, con defaults materializados y orden de claves estable.
+- **Salida de `resolve()`**: todas las secciones presentes. Es lo que consume el runtime
+  del proxy, **no** lo que se escribe en la base de datos.
 
 La canonicalización no es cosmética: hace que dos policies equivalentes sean byte-idénticas,
 lo que permite comparar, hashear (ETag / idempotencia) y que el diff de auditoría no dé
@@ -92,55 +96,69 @@ afinar por país.
 
 ---
 
-## 4. Firewall (diseño nuevo)
+## 4. Firewall — ✅ decidido e implementado
 
-No hay nada previo. Dos formas posibles, hay que elegir:
+**Reglas ordenadas, primera que casa gana.** Dos direcciones separadas:
 
-### Opción A — whitelist / blacklist (lo que describiste)
-
-```jsonc
-"firewall": {
-  "default_action": "allow",
-  "whitelist": ["10.0.0.0/8", "*.axium.dev"],
-  "blacklist": ["192.168.1.7", "*.evil.com"]
-}
-```
-
-Precedencia fija: `blacklist` gana sobre `whitelist`, y lo no cubierto cae en `default_action`.
-Simple de pintar en un formulario (dos cajas de texto). El coste es que la precedencia es
-implícita: cuando una entrada está en las dos listas, el usuario no ve por qué gana una.
-
-### Opción B — reglas ordenadas (recomendada)
+- **`inbound`** — quién puede llamar a la app. Solo reglas `cidr`: de una petición
+  entrante conoces la dirección, no un nombre.
+- **`outbound`** — a qué destinos sale el proxy. Reglas `cidr` y `domain`.
 
 ```jsonc
 "firewall": {
-  "default_action": "deny",
-  "rules": [
-    { "action": "deny",  "match": "domain", "value": "*.evil.com" },
-    { "action": "allow", "match": "cidr",   "value": "10.0.0.0/8" }
-  ]
+  "inbound": {
+    "default_action": "deny",
+    "rules": [
+      { "action": "deny",  "type": "cidr", "value": "10.13.37.0/24" },
+      { "action": "allow", "type": "cidr", "value": "10.0.0.0/8" }
+    ]
+  },
+  "outbound": {
+    "default_action": "allow",
+    "rules": [{ "action": "deny", "type": "domain", "value": "*.evil.com" }]
+  }
 }
 ```
 
-Semántica clásica de firewall: **primera regla que casa, gana**. No hay precedencia oculta,
-el orden es visible y reordenable en la UI, y whitelist/blacklist pasan a ser dos formas de
-usar la misma estructura (`default_action: "deny"` + reglas allow = whitelist).
+Se descartó whitelist/blacklist porque la precedencia queda implícita y hay casos que no
+puede expresar: *"bloquea 10.0.0.0/8 excepto 10.1.0.0/16"* es imposible si la blacklist
+siempre gana. Con reglas ordenadas son dos filas en el orden correcto.
 
-**Sin decidir, además de A vs B:**
+**El orden de `rules` no se canonicaliza nunca**: reordenar cambia el comportamiento.
 
-- **Dirección**: ¿inbound (quién puede llamar al proxy) u outbound (a qué destinos puede
-  salir)? Son dos ejes distintos y puede que hagan falta los dos (`firewall.inbound` /
-  `firewall.outbound`).
-- **Solape con `geo`**: si el firewall filtra IPs de entrada, hace el mismo trabajo que
-  `geo.allow` con más granularidad. O `firewall` es solo outbound, o `geo` se convierte en
-  azúcar que se expande a reglas de firewall inbound. Hay que decidirlo o quedan dos
-  mecanismos compitiendo por la misma decisión.
+### Canonicalización
 
-**Valor real de validar esto**: formato de IPv4/IPv6 y CIDR, patrones de dominio,
-y detección de reglas **sombreadas** (una regla que nunca se alcanza porque otra anterior
-ya cubre su rango) — eso último como warning, no como error.
+| Entrada | Salida |
+|---|---|
+| `10.0.0.1/8` | `10.0.0.0/8` (bits de host a cero) |
+| `192.168.1.7` | `192.168.1.7/32` (IP suelta → red de un host) |
+| `2001:0DB8::1/32` | `2001:db8::/32` (RFC 5952) |
+| `WWW.Evil.COM.` | `www.evil.com` |
+| `ejemplo-ñ.es` | `xn--ejemplo--k3a.es` (punycode vía el `URL` de plataforma) |
 
----
+### Rechazos deliberados
+
+Sin dependencias externas, la regla es **rechazar lo que no se canonicalice sin ambigüedad**
+en lugar de aceptarlo a medias — una regla que no casa por un fallo de normalización es
+tráfico que pasa cuando no debía:
+
+- zone IDs (`fe80::1%eth0`)
+- octetos con ceros a la izquierda (`010.0.0.1`, que unos resolvers leen en octal)
+- IPv4-mapped IPv6 (`::ffff:10.0.0.1`), que nunca casaría con una petición IPv4
+- dominios con esquema, puerto, ruta o guion bajo; comodín fuera del prefijo
+- una IP declarada como `type: "domain"` y viceversa
+- más de 256 reglas por dirección
+
+### Warnings (no bloquean)
+
+`firewall.duplicate_rule`, `firewall.shadowed_rule` (una regla anterior ya decide sobre
+ese rango), `firewall.redundant_rule` (repite `default_action` sin tapar a ninguna regla
+posterior) y `firewall.blocks_all_traffic` (`0.0.0.0/0` o `::/0` en un `deny`).
+
+### Semántica que el runtime debe implementar
+
+`firewall.inbound` y `geo` son **dos puertas independientes: la petición pasa las dos**.
+Un `allow` explícito en el firewall **no** salta el bloqueo geográfico.
 
 ## 5. Superficie de la API
 
@@ -284,10 +302,16 @@ Un documento sin `version` se trata como v1 (es el caso de las filas con el defa
 
 ## 10. Preguntas abiertas
 
-1. **Firewall**: ¿opción A (whitelist/blacklist) o B (reglas ordenadas)?
-2. **Firewall**: ¿inbound, outbound, o ambos? Y cómo se reparte con `geo` para que no
-   compitan por la misma decisión.
-3. **Catálogos**: valores definitivos de `dlp.category`, `dlp.action` y `transformations.type`.
-4. **`transformations[].options`**: ¿qué opciones lleva `pdf_to_markdown`? Sin eso queda como
+Resueltas en la fase 1: forma del firewall (reglas ordenadas), direcciones (ambas),
+defaults (sección ausente si no se configuró), zod 4, sin dependencias.
+
+Pendientes:
+
+1. **Catálogos**: valores definitivos de `dlp.category`, `dlp.action` y `transformations.type`.
+2. **`transformations[].options`**: qué opciones lleva `pdf_to_markdown`. Sin eso queda como
    objeto libre y se pierde la mitad del valor de validarlo.
-5. **i18n**: ¿merece la pena pedir el cambio de `ErrorDetail` en la API para aprovechar `code`?
+3. **`geo`**: granularidad (alias `EU` + ISO 3166-1, o solo países) y cómo se reparte con
+   `firewall.inbound`.
+4. **i18n**: si merece la pena pedir el cambio de `ErrorDetail` en la API para aprovechar
+   el `code` estable que la librería ya emite.
+5. **Migración de la API a zod 4** (§8): bloquea la integración, no la librería.

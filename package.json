@@ -1,7 +1,7 @@
 {
   "name": "@axium-lab/policies",
   "version": "0.1.0",
-  "description": "",
+  "description": "Validaci\u00f3n y composici\u00f3n de policies de proxy app",
   "license": "MIT",
   "author": "Axium Lab",
   "type": "module",
@@ -33,11 +33,17 @@
     "build": "tsup",
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit",
-    "start": "node dist/esm/index.js"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:manual": "vitest run tests/manual.test.ts"
+  },
+  "peerDependencies": {
+    "zod": "^4.0.0"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
     "tsup": "^8.5.1",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.0",
+    "zod": "^4.6.5"
   }
 }
