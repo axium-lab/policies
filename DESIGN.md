@@ -1,0 +1,293 @@
+# axium-policies — diseño
+
+> Estado: **propuesta para discusión**. No hay código escrito todavía.
+> Última actualización: 2026-09-22
+
+Librería TypeScript para **componer y validar documentos de policy** de un proxy app.
+El frontend las construye, el backend las valida antes de persistir.
+
+---
+
+## 1. Contexto confirmado
+
+Datos verificados contra el repo de la API (sesión `api`, solo lectura):
+
+| Hecho | Detalle |
+|---|---|
+| Dónde vive | Columna `policies JSONB NOT NULL DEFAULT '{}'` en `rm.proxy_apps` |
+| Forma | **Un sobre** con secciones opcionales. Una fila por app. No hay tabla `policies` ni columna `type` |
+| Validación en DB | **Ninguna**. Cero CHECK constraints. Esta librería es la única barrera |
+| Niveles | Uno solo (app). Sin herencia, sin merge en cascada — el Request Manager va a desaparecer |
+| Stack backend | Postgres + Knex 3 + driver `pg` 8, runtime **Bun** |
+| Fuera del documento | `rate_limit_rpm`, `rate_limit_tpm`, `budget_*` son columnas (contadores, necesitan UPDATE atómico) |
+
+⚠️ El bump de schema que añade la columna **está sin aplicar**: solo aparece en instalaciones frescas.
+
+### Decisiones tomadas
+
+1. **Firewall** = capa de red (dominios / IPs / CIDRs). Es nuevo, no existe nada en el repo.
+2. **Se persiste el documento completo** con los defaults materializados.
+3. **Zod 4**, y la API se adapta. → ver acción pendiente en §8.
+4. **La librería la importa también el frontend** ⇒ isomorfa, sin dependencias de `node:*`.
+
+---
+
+## 2. Forma del documento
+
+```jsonc
+{
+  "version": 1,
+  "cache":   { "mode": "off", "ttl_seconds": null },
+  "capture": { "samples": false },
+  "dlp":     { "rules": [{ "category": "dni", "action": "anonymize" }] },
+  "geo":     { "allow": ["EU"], "on_violation": "block" },
+  "transformations": [{ "type": "pdf_to_markdown", "options": {} }],
+  "firewall": { /* §4 */ }
+}
+```
+
+- **Entrada**: todas las secciones opcionales (una fila existente puede ser `{}`).
+- **Salida de `parse()`**: documento completo, defaults materializados, orden de claves estable.
+
+La canonicalización no es cosmética: hace que dos policies equivalentes sean byte-idénticas,
+lo que permite comparar, hashear (ETag / idempotencia) y que el diff de auditoría no dé
+falsos positivos por reordenación.
+
+### Claves desconocidas
+
+`passthrough` en la raíz + `strict` dentro de cada sección conocida.
+
+- Raíz permisiva: un backend viejo que haga read-modify-write **no borra en silencio** una
+  sección escrita por uno nuevo.
+- Secciones estrictas: un typo dentro de `cache` sí es un error, no se traga.
+
+---
+
+## 3. Catálogos de enums
+
+⚠️ **Esto no existe en ninguna parte.** Los comentarios del schema dicen que el catálogo
+"vive en el código de la app", y ese código no está escrito. Esta librería es el primer
+sitio donde se define. **Cada lista hay que validarla antes de congelarla.**
+
+| Campo | Valores | Procedencia |
+|---|---|---|
+| `cache.mode` | `off` \| `strict` \| `semantic` | ✅ Real: `rm.cache_mode_enum` en Postgres |
+| `cache.ttl_seconds` | `number \| null` | Propuesta |
+| `capture.samples` | `boolean` | Propuesta |
+| `dlp.rules[].category` | `dni`, + ? | Solo `dni`, en un comentario. **A definir** |
+| `dlp.rules[].action` | `anonymize` \| `block` | Comentario, sin confirmar |
+| `geo.allow[]` | `EU` + ISO 3166-1 alpha-2 | **Inventado en diseño.** Requisito real: "denegar fuera de Europa" |
+| `geo.on_violation` | `block` \| `log` | Propuesta (`log` añadido para poder desplegar en modo observación) |
+| `transformations[].type` | `pdf_to_markdown`, + ? | Solo ese, en un comentario. **A definir** |
+
+**`semantic` está reservado pero no implementado** (requiere pgvector y una tabla de
+embeddings que se decidió no crear). Propuesta: aceptarlo como valor sintácticamente válido
+pero emitir un **warning no bloqueante** (§6), para que la API pueda rechazarlo en runtime
+sin que la librería mienta sobre el enum real de Postgres.
+
+**`geo`**: propongo que la librería expanda el alias `EU` a la lista de códigos de país,
+de forma que el runtime compare siempre contra códigos ISO y el alias sea azúcar de
+configuración. Así "denegar fuera de Europa" es una sola entrada, y sigue siendo posible
+afinar por país.
+
+---
+
+## 4. Firewall (diseño nuevo)
+
+No hay nada previo. Dos formas posibles, hay que elegir:
+
+### Opción A — whitelist / blacklist (lo que describiste)
+
+```jsonc
+"firewall": {
+  "default_action": "allow",
+  "whitelist": ["10.0.0.0/8", "*.axium.dev"],
+  "blacklist": ["192.168.1.7", "*.evil.com"]
+}
+```
+
+Precedencia fija: `blacklist` gana sobre `whitelist`, y lo no cubierto cae en `default_action`.
+Simple de pintar en un formulario (dos cajas de texto). El coste es que la precedencia es
+implícita: cuando una entrada está en las dos listas, el usuario no ve por qué gana una.
+
+### Opción B — reglas ordenadas (recomendada)
+
+```jsonc
+"firewall": {
+  "default_action": "deny",
+  "rules": [
+    { "action": "deny",  "match": "domain", "value": "*.evil.com" },
+    { "action": "allow", "match": "cidr",   "value": "10.0.0.0/8" }
+  ]
+}
+```
+
+Semántica clásica de firewall: **primera regla que casa, gana**. No hay precedencia oculta,
+el orden es visible y reordenable en la UI, y whitelist/blacklist pasan a ser dos formas de
+usar la misma estructura (`default_action: "deny"` + reglas allow = whitelist).
+
+**Sin decidir, además de A vs B:**
+
+- **Dirección**: ¿inbound (quién puede llamar al proxy) u outbound (a qué destinos puede
+  salir)? Son dos ejes distintos y puede que hagan falta los dos (`firewall.inbound` /
+  `firewall.outbound`).
+- **Solape con `geo`**: si el firewall filtra IPs de entrada, hace el mismo trabajo que
+  `geo.allow` con más granularidad. O `firewall` es solo outbound, o `geo` se convierte en
+  azúcar que se expande a reglas de firewall inbound. Hay que decidirlo o quedan dos
+  mecanismos compitiendo por la misma decisión.
+
+**Valor real de validar esto**: formato de IPv4/IPv6 y CIDR, patrones de dominio,
+y detección de reglas **sombreadas** (una regla que nunca se alcanza porque otra anterior
+ya cubre su rango) — eso último como warning, no como error.
+
+---
+
+## 5. Superficie de la API
+
+### Por qué no `add_cache()` / `remove_firewall()`
+
+Funciona, pero N tipos × M operaciones = 30-40 funciones escritas a mano, y añadir una
+sección obliga a tocar cinco sitios. El riesgo no es el volumen: es que una de esas
+funciones se desincronice del validador.
+
+En su lugar, **registro de secciones**: cada sección se declara una vez
+(`{ key, schema, defaults }`) y de ahí salen los tipos, el validador, los defaults y el
+JSON Schema. Añadir `firewall` = un fichero nuevo + una línea en el registro.
+
+### Validación (el 90% del uso del backend)
+
+```ts
+const result = parsePolicies(input);   // nunca lanza
+if (!result.ok) {
+  return res.status(422).json({
+    status: false,
+    error: { code: 'VALIDATION_ERROR', message: 'Error de validación', details: result.errors },
+  });
+}
+await knex('rm.proxy_apps').where({ id }).update({ policies: result.value });
+```
+
+- `parsePolicies(input)` → `{ ok: true, value, warnings } | { ok: false, errors }`
+- `assertPolicies(input)` → devuelve el documento o lanza (para quien prefiera try/catch)
+- `policiesSchema` → el schema de zod crudo, por si la API quiere componerlo con los suyos
+
+### Composición (frontend y tests)
+
+```ts
+const doc = policy()
+  .set('cache', { mode: 'strict', ttl_seconds: 300 })
+  .set('geo',   { allow: ['EU'], on_violation: 'block' })
+  .remove('capture')
+  .build();                              // valida y materializa defaults
+
+// Azúcar derivada del registro, no escrita a mano:
+policy().cache({ mode: 'off' }).firewall({ default_action: 'deny', rules: [] }).build();
+```
+
+Inmutable y encadenable: cada `.set()` devuelve un builder nuevo. `set(kind, value)` da el
+mismo autocompletado que `add_cache()` sin una función por tipo.
+
+### Para el frontend
+
+```ts
+policiesJSONSchema()        // JSON Schema (zod 4 lo emite nativo) para pintar formularios
+CACHE_MODES, DLP_CATEGORIES, DLP_ACTIONS, TRANSFORMATION_TYPES   // catálogos, para los <select>
+defaultPolicies()           // documento por defecto, para inicializar el formulario
+```
+
+Que los catálogos se exporten evita que el front los duplique hardcodeados y se desincronicen.
+
+### Tipos
+
+`Policies`, `CachePolicy`, `DlpPolicy`, `GeoPolicy`, `FirewallPolicy`, `TransformationsPolicy`,
+todos vía `z.infer` — nunca escritos a mano en paralelo al schema.
+
+---
+
+## 6. Errores y warnings
+
+La API ya tiene contrato: `details: [{ field: "dlp.rules.0.category", message }]`,
+con `field` como **string con puntos** (se construye con `path.join('.')`, `'(root)'` si
+está vacío) y **varios errores a la vez**.
+
+Propongo emitir ambas formas, para no obligar a nadie a aplanar:
+
+```ts
+type PolicyIssue = {
+  path:    (string | number)[];   // ["dlp","rules",0,"category"]  → para marcar el campo en el form
+  field:   string;                // "dlp.rules.0.category"        → el contrato HTTP actual
+  code:    string;                // "invalid_enum"                → estable, para i18n
+  message: string;
+};
+```
+
+**Warnings** (no bloquean, el documento es válido y se guarda): uso de `cache.mode: "semantic"`
+sin implementar, reglas de firewall sombreadas, `cache.ttl_seconds` presente con `mode: "off"`.
+
+⚠️ Los **códigos estables para i18n no existen hoy** en la API: su `code` es uno de siete
+valores de proceso y el texto por campo es el mensaje crudo de zod, en inglés. Exponer `code`
+desde aquí es gratis, pero aprovecharlo implica tocar `ErrorDetail` en la API. Petición aparte.
+
+---
+
+## 7. Reglas entre campos
+
+Donde está el valor real, más allá de comprobar tipos:
+
+- `cache.mode: "off"` ⇒ `ttl_seconds` debe ser `null`
+- `cache.mode: "strict" | "semantic"` ⇒ `ttl_seconds` requerido y > 0
+- `geo.on_violation: "block"` ⇒ `geo.allow` no puede estar vacío (bloquearía todo)
+- `dlp.rules[]` ⇒ sin `category` duplicada
+- `firewall` ⇒ CIDR/IP/dominio bien formados; reglas sombreadas como warning
+- `transformations[]` ⇒ sin `type` duplicado; `options` validado **por tipo**
+  (unión discriminada), no como objeto libre
+
+---
+
+## 8. Empaquetado
+
+Alineado con el baseline de `@axium-lab/helix`: ESM+CJS dual vía tsup, tipos emitidos una vez,
+`files: ["dist","README.md"]`, scope `@axium-lab`, ES2022 / NodeNext.
+
+Cambios respecto a lo que ya está montado:
+
+- **zod 4 como `peerDependency`** (+ devDependency para desarrollo). Peer, no dependency:
+  dos copias de zod en el árbol rompen `error instanceof ZodError`, que es de lo que depende
+  el manejador de errores de la API para devolver 400 en vez de 500.
+- **Quitar `types: ["node"]`** del tsconfig y no importar `node:*`: la librería corre también
+  en el navegador.
+- El backend corre con **Bun**, no Node: revisar si `engines.node` debe acompañarse de
+  `engines.bun`.
+
+### ⚠️ Acción pendiente en el repo de la API (bloquea la integración)
+
+La API usa `zod ^3.23.8` y su `handleErrorApp` hace `error.errors`. En zod 4 eso pasó a
+llamarse **`error.issues`**. Si esta librería publica con zod 4 contra ese backend sin
+tocarlo, los errores de validación salen como **500 silencioso** en lugar de 400 legible.
+
+Hay que migrar la API a zod 4 (o al menos adaptar `handleErrorApp`) **antes** de integrar.
+
+---
+
+## 9. Versionado y migraciones
+
+`version` es la versión **del esquema del documento**, no una revisión de la policy.
+No hay histórico, ni snapshots, ni rollback: `core.audit_logs` guarda texto libre, no
+documentos JSON, así que no permite reconstruir una policy anterior.
+
+La librería incluye `migrate(doc)`: v1 → vN según el `version` de entrada, ejecutado dentro
+de `parse()`. Barato de montar ahora, carísimo de retrofitear cuando ya hay filas en producción.
+
+Un documento sin `version` se trata como v1 (es el caso de las filas con el default `'{}'`).
+
+---
+
+## 10. Preguntas abiertas
+
+1. **Firewall**: ¿opción A (whitelist/blacklist) o B (reglas ordenadas)?
+2. **Firewall**: ¿inbound, outbound, o ambos? Y cómo se reparte con `geo` para que no
+   compitan por la misma decisión.
+3. **Catálogos**: valores definitivos de `dlp.category`, `dlp.action` y `transformations.type`.
+4. **`transformations[].options`**: ¿qué opciones lleva `pdf_to_markdown`? Sin eso queda como
+   objeto libre y se pierde la mitad del valor de validarlo.
+5. **i18n**: ¿merece la pena pedir el cambio de `ErrorDetail` en la API para aprovechar `code`?
