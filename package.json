@@ -1,7 +1,7 @@
 {
   "name": "@axium-lab/policies",
   "version": "0.1.0",
-  "description": "Validaci\u00f3n y composici\u00f3n de policies de proxy app",
+  "description": "Validation and composition of proxy app policies",
   "license": "MIT",
   "author": "Axium Lab",
   "type": "module",
@@ -24,13 +24,13 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git@ssh.dev.azure.com:v3/axium-lab/pocs/axium-polices"
+    "url": "git+https://dev.azure.com/axium-lab/pocs/_git/axium-polices"
   },
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && node scripts/check-dist.mjs",
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
