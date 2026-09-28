@@ -1,6 +1,6 @@
 {
   "name": "@axium-lab/policies",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Validation and composition of proxy app policies",
   "license": "MIT",
   "author": "Axium Lab",
