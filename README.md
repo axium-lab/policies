@@ -1,5 +1,8 @@
 # @axium-lab/policies
 
+[![npm version](https://img.shields.io/npm/v/@axium-lab/policies)](https://www.npmjs.com/package/@axium-lab/policies)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 Validation and composition of versioned policy documents (firewall, cache, capture…).
 Compose them with an immutable builder, validate them anywhere with the same rules, and
 resolve them into a fully-defaulted object ready to enforce.

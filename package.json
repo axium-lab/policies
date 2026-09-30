@@ -1,9 +1,13 @@
 {
   "name": "@axium-lab/policies",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Isomorphic, schema-driven validation and composition of versioned policy documents",
   "license": "MIT",
   "author": "Axium Lab",
+  "contributors": [
+    "Luis Peris",
+    "Pedro Losas"
+  ],
   "type": "module",
   "engines": {
     "node": ">=22"
@@ -24,7 +28,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git@ssh.dev.azure.com:v3/axium-lab/pocs/axium-polices"
+    "url": "git+https://github.com/axium-lab/policies.git"
   },
   "publishConfig": {
     "access": "public"
