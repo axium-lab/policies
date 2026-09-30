@@ -1,16 +1,17 @@
 # @axium-lab/policies
 
-Validation and composition of proxy app policy documents. The frontend composes them;
-the backend validates them before writing them to `rm.proxy_apps.policies`.
+Validation and composition of versioned policy documents (firewall, cache, capture…).
+Compose them with an immutable builder, validate them anywhere with the same rules, and
+resolve them into a fully-defaulted object ready to enforce.
 
 Isomorphic (browser, Node and Bun) with no runtime dependencies: `zod` is a
 `peerDependency`.
 
 ```bash
-npm install @axium-lab/policies zod
+npm install @axium-lab/policies
 ```
 
-## Backend usage
+## Validating untrusted input
 
 ```ts
 import { parsePolicies } from '@axium-lab/policies';
@@ -24,25 +25,25 @@ if (!result.ok) {
   });
 }
 
-await knex('rm.proxy_apps').where({ id }).update({ policies: result.value });
+await store.save(result.value); // canonicalized document, safe to persist
 ```
 
-`result.errors` already includes `field` in the format the API returns (`firewall.inbound.rules.1.value`),
+`result.errors` includes `field` as a dotted path (`firewall.inbound.rules.1.value`),
 plus `path` as an array to highlight the field in a form and a stable `code` for i18n.
 
 `result.warnings` do not block: they flag rules that probably do not do what was intended
 (duplicate, unreachable, redundant).
 
-## Proxy runtime usage
+## Enforcing policies at runtime
 
 ```ts
 import { resolvePolicies } from '@axium-lab/policies';
 
-const policies = resolvePolicies(row.policies); // every section present
+const policies = resolvePolicies(storedDocument); // every section present
 policies.firewall.inbound.default_action;
 ```
 
-## Frontend usage
+## Composing policies
 
 ```ts
 import { policy, policiesJsonSchema } from '@axium-lab/policies';
@@ -51,16 +52,16 @@ const draft = policy().set('firewall', {
   inbound: { default_action: 'deny', rules: [{ action: 'allow', type: 'cidr', value: '10.0.0.0/8' }] },
 });
 
-const result = draft.safeBuild();   // validate on the client before sending
-const schema = policiesJsonSchema(); // JSON Schema to render the form
+const result = draft.safeBuild();   // validate before sending or saving
+const schema = policiesJsonSchema(); // JSON Schema, e.g. to render a form or document an API
 ```
 
 The builder is immutable: every `set()` / `remove()` returns a new one.
 
 ## The document
 
-A section exists **only if it was configured**. An app with nothing configured is
-`{ "version": 1 }`, which fits the column's `DEFAULT '{}'`. Inside a present section,
+A section exists **only if it was configured**. A document with nothing configured is
+`{ "version": 1 }` (an empty `{}` is accepted too). Inside a present section,
 defaults are materialized.
 
 ```jsonc

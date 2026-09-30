@@ -1,7 +1,7 @@
 {
   "name": "@axium-lab/policies",
   "version": "0.1.1",
-  "description": "Validation and composition of proxy app policies",
+  "description": "Isomorphic, schema-driven validation and composition of versioned policy documents",
   "license": "MIT",
   "author": "Axium Lab",
   "type": "module",
