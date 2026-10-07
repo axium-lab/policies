@@ -85,11 +85,12 @@ accepts `cidr` and `domain`. Values are canonicalized on validation (`10.0.0.1/8
 
 Configures [`@axium-lab/euro-pii`](https://www.npmjs.com/package/@axium-lab/euro-pii) without
 depending on it. `options` is euro-pii's `AnonymizeOptions` field for field, so the core passes
-it as-is; `enabled` is ours and decides whether to call at all.
+it as-is; `enabled` and `targets` are ours and decide whether, and on what, to call it.
 
 ```jsonc
 "dlp": {
   "enabled": true,
+  "targets": ["file", "prompt"],                   // file, prompt or both
   "options": {
     "countries": ["ES", "GLOBAL"],                 // what to scan: countries, kinds, entities, except
     "policy": {                                    // what to do with each hit
@@ -102,12 +103,15 @@ it as-is; `enabled` is ours and decides whether to call at all.
 ```
 
 ```ts
-if (policies.dlp.enabled) anonymize(text, policies.dlp.options);
+const { enabled, targets, options } = policies.dlp;
+if (enabled && targets?.includes('prompt')) anonymize(prompt, options);
+if (enabled && targets?.includes('file')) anonymize(extractedText, options);
 ```
 
 Only the shape is validated here (`ES_NIF`-style names, ISO alpha-2 or `GLOBAL`, the action
 enum). Whether an entity exists is checked by the core against euro-pii's catalog. `enabled: true`
-requires at least one of `countries`, `kinds` or `entities`: with none, euro-pii scans everything.
+requires at least one target, and at least one of `countries`, `kinds` or `entities`: with none,
+euro-pii scans everything. The same `options` apply to every target.
 
 The root keeps keys it does not know, so an older deployment does not silently drop a
 section written by a newer one. Inside each known section, an unknown key is an error.

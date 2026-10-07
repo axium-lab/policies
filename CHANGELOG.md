@@ -10,11 +10,12 @@ with pre-1.0 conventions: minor bumps signal BREAKING changes; patch bumps are s
 
 ### Added
 
-- **`dlp`** policy: `enabled` plus `options`, a mirror of `@axium-lab/euro-pii`'s
+- **`dlp`** policy: `enabled`, `targets` (`file`, `prompt` or both) and `options`, a mirror of `@axium-lab/euro-pii`'s
   `AnonymizeOptions` that the core passes as-is. Validates shape only (entity
   names, countries, `mask | block | keep`), never the catalog. Sets are sorted
-  and deduplicated; `enabled: true` without a selection and an excluded entity
-  marked `block` are errors. Exports `DLP_ACTIONS`, `DlpPolicy`, `DlpAction`.
+  and deduplicated; `enabled: true` without targets or without a selection, and
+  an excluded entity marked `block`, are errors. Exports `DLP_ACTIONS`,
+  `DLP_TARGETS`, `DlpPolicy`, `DlpAction`, `DlpTarget`.
 
 ## [0.1.0] — 2026-09-28
 

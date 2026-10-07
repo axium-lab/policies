@@ -32,6 +32,7 @@ describe('dlp — valid combinations', () => {
     expect(
       ok({
         enabled: true,
+        targets: ['prompt'],
         options: {
           countries: ['ES', 'GLOBAL'],
           policy: { kinds: { BANK_ACCOUNT: 'block' }, entities: { ES_NIF: 'keep' } },
@@ -39,6 +40,7 @@ describe('dlp — valid combinations', () => {
       }).value.dlp,
     ).toEqual({
       enabled: true,
+      targets: ['prompt'],
       options: {
         countries: ['ES', 'GLOBAL'],
         policy: { default: 'mask', kinds: { BANK_ACCOUNT: 'block' }, entities: { ES_NIF: 'keep' } },
@@ -52,23 +54,23 @@ describe('dlp — valid combinations', () => {
   });
 
   it('any of countries, kinds or entities is enough', () => {
-    ok({ enabled: true, options: { countries: ['ES'] } });
-    ok({ enabled: true, options: { kinds: ['TAX_ID'] } });
-    ok({ enabled: true, options: { entities: ['ES_NIF'] } });
+    ok({ enabled: true, targets: ['prompt'], options: { countries: ['ES'] } });
+    ok({ enabled: true, targets: ['prompt'], options: { kinds: ['TAX_ID'] } });
+    ok({ enabled: true, targets: ['prompt'], options: { entities: ['ES_NIF'] } });
   });
 
   it('accepts an explicit block on an entity that is not excluded', () => {
-    ok({ enabled: true, options: { kinds: ['TAX_ID'], except: ['ES_CIF'], policy: { entities: { ES_NIF: 'block' } } } });
+    ok({ enabled: true, targets: ['prompt'], options: { kinds: ['TAX_ID'], except: ['ES_CIF'], policy: { entities: { ES_NIF: 'block' } } } });
   });
 
   it('emits no warnings', () => {
-    expect(ok({ enabled: true, options: { countries: ['ES'] } }).warnings).toEqual([]);
+    expect(ok({ enabled: true, targets: ['prompt'], options: { countries: ['ES'] } }).warnings).toEqual([]);
   });
 });
 
 describe('dlp — canonicalization', () => {
   it('sorts and deduplicates the sets', () => {
-    const value = ok({ enabled: true, options: { countries: ['GLOBAL', 'ES', 'ES'], except: ['UUID', 'DATE_TIME'] } })
+    const value = ok({ enabled: true, targets: ['prompt'], options: { countries: ['GLOBAL', 'ES', 'ES'], except: ['UUID', 'DATE_TIME'] } })
       .value.dlp;
     expect(value?.options.countries).toEqual(['ES', 'GLOBAL']);
     expect(value?.options.except).toEqual(['DATE_TIME', 'UUID']);
@@ -77,19 +79,44 @@ describe('dlp — canonicalization', () => {
   it('sorts the keys of the action maps', () => {
     const value = ok({
       enabled: true,
+      targets: ['prompt'],
       options: { countries: ['ES'], policy: { entities: { ES_NIF: 'keep', ES_CIF: 'block' } } },
     }).value.dlp;
     expect(JSON.stringify(value?.options.policy.entities)).toBe('{"ES_CIF":"block","ES_NIF":"keep"}');
   });
 });
 
+describe('dlp — targets', () => {
+  it('accepts file, prompt or both, sorted and deduplicated', () => {
+    const selection = { countries: ['ES'] };
+    expect(ok({ enabled: true, targets: ['file'], options: selection }).value.dlp?.targets).toEqual(['file']);
+    expect(ok({ enabled: true, targets: ['prompt', 'file', 'prompt'], options: selection }).value.dlp?.targets).toEqual([
+      'file',
+      'prompt',
+    ]);
+  });
+
+  it('enabled without targets', () => {
+    expect(codes({ enabled: true, options: { countries: ['ES'] } })).toEqual(['dlp.targets:dlp.targets_required']);
+  });
+
+  it('disabled does not need targets', () => {
+    ok({ enabled: false, options: { countries: ['ES'] } });
+  });
+
+  it('rejects an empty list and unknown targets', () => {
+    expect(codes({ targets: [] })).toEqual(['dlp.targets:too_small']);
+    expect(codes({ targets: ['response'] })).toEqual(['dlp.targets.0:invalid_value']);
+  });
+});
+
 describe('dlp — cross-field rules', () => {
   it('enabled without a selection', () => {
-    expect(codes({ enabled: true })).toEqual(['dlp.options:dlp.selection_required']);
+    expect(codes({ enabled: true, targets: ['prompt'] })).toEqual(['dlp.options:dlp.selection_required']);
   });
 
   it('enabled with only except or actions still has no selection', () => {
-    expect(codes({ enabled: true, options: { except: ['UUID'], policy: { kinds: { TAX_ID: 'block' } } } })).toEqual([
+    expect(codes({ enabled: true, targets: ['prompt'], options: { except: ['UUID'], policy: { kinds: { TAX_ID: 'block' } } } })).toEqual([
       'dlp.options:dlp.selection_required',
     ]);
   });

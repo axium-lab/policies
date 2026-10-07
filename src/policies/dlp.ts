@@ -4,6 +4,8 @@ import type { PolicySection } from '../types/section.js';
 
 /** Mirrors euro-pii's `Action`. Adding one before the engine honours it accepts policies nobody enforces. */
 export const DLP_ACTIONS = ['mask', 'block', 'keep'] as const;
+/** What the core runs euro-pii over. A file is scanned on its extracted text. */
+export const DLP_TARGETS = ['file', 'prompt'] as const;
 
 /**
  * Shape only. Whether `ES_NIF` exists is the core's call against euro-pii's live
@@ -22,7 +24,7 @@ const action = z.enum(DLP_ACTIONS);
  * Empty is rejected because euro-pii reads an omitted field as "unrestricted", and
  * `[]` reading as either "nothing" or "everything" is a trap.
  */
-const setOf = (item: z.ZodString) =>
+const setOf = <T extends string>(item: z.ZodType<T>) =>
   z
     .array(item)
     .min(1, { error: 'Cannot be empty: omit the field to leave it unrestricted' })
@@ -63,10 +65,21 @@ const schema = z
   .strictObject({
     /** Off by default, so pausing DLP keeps its configuration and `{}` changes nothing. */
     enabled: z.boolean().default(false),
+    /** One configuration for every target: what is scanned and done is the same on each. */
+    targets: setOf(z.enum(DLP_TARGETS)),
     options: options.prefault({}),
   })
   .superRefine((value, ctx) => {
     const { countries, kinds, entities, except, policy } = value.options;
+
+    if (value.enabled && !value.targets) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['targets'],
+        message: 'An enabled DLP needs at least one target: file, prompt or both',
+        params: { code: 'dlp.targets_required' },
+      });
+    }
 
     // euro-pii scans all of its catalog when nothing is selected.
     if (value.enabled && !countries && !kinds && !entities) {
@@ -93,6 +106,7 @@ const schema = z
 
 export type DlpPolicy = z.infer<typeof schema>;
 export type DlpAction = (typeof DLP_ACTIONS)[number];
+export type DlpTarget = (typeof DLP_TARGETS)[number];
 
 export const dlpSection = {
   key: 'dlp',
