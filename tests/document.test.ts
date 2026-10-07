@@ -62,6 +62,7 @@ describe('assert y resolve', () => {
       version: 1,
       cache: { mode: 'off', ttl_seconds: null, min_similarity: null },
       capture: { samples: false },
+      dlp: { enabled: false, options: { policy: { default: 'mask', kinds: {}, entities: {} } } },
       firewall: {
         inbound: { default_action: 'allow', rules: [] },
         outbound: { default_action: 'allow', rules: [] },

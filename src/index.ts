@@ -25,5 +25,8 @@ export type { CacheMode, CachePolicy } from './policies/cache.js';
 
 export type { CapturePolicy } from './policies/capture.js';
 
+export { DLP_ACTIONS } from './policies/dlp.js';
+export type { DlpAction, DlpPolicy } from './policies/dlp.js';
+
 export { FIREWALL_ACTIONS, FIREWALL_MAX_RULES, FIREWALL_RULE_TYPES } from './policies/firewall.js';
 export type { FirewallPolicy, FirewallRule } from './policies/firewall.js';

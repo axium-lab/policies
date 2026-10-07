@@ -40,7 +40,7 @@ Datos verificados contra el repo de la API (sesión `api`, solo lectura):
   "version": 1,
   "cache":   { "mode": "off", "ttl_seconds": null },
   "capture": { "samples": false },
-  "dlp":     { "rules": [{ "category": "dni", "action": "anonymize" }] },
+  "dlp":     { "enabled": true, "options": { "countries": ["ES"], "policy": { "default": "mask" } } },
   "geo":     { "allow": ["EU"], "on_violation": "block" },
   "transformations": [{ "type": "pdf_to_markdown", "options": {} }],
   "firewall": { /* §4 */ }
@@ -79,8 +79,8 @@ sitio donde se define. **Cada lista hay que validarla antes de congelarla.**
 | `cache.ttl_seconds` | entero 1 – 2 592 000 (30 días), o `null` | ✅ decidido en la fase 2 |
 | `cache.min_similarity` | 0 – 1, default `0.95` | ✅ decidido en la fase 2 |
 | `capture.samples` | `boolean`, default `false` | ✅ decidido en la fase 3 |
-| `dlp.rules[].category` | `dni`, + ? | Solo `dni`, en un comentario. **A definir** |
-| `dlp.rules[].action` | `anonymize` \| `block` | Comentario, sin confirmar |
+| `dlp.options.*` (entidades, kinds, países) | Solo patrón, sin catálogo | ✅ El catálogo vive en `@axium-lab/euro-pii` (§4b) |
+| `dlp.options.policy.*` (acción) | `mask` \| `block` \| `keep` | ✅ Real: el `Action` de euro-pii |
 | `geo.allow[]` | `EU` + ISO 3166-1 alpha-2 | **Inventado en diseño.** Requisito real: "denegar fuera de Europa" |
 | `geo.on_violation` | `block` \| `log` | Propuesta (`log` añadido para poder desplegar en modo observación) |
 | `transformations[].type` | `pdf_to_markdown`, + ? | Solo ese, en un comentario. **A definir** |
@@ -167,6 +167,57 @@ Un `allow` explícito en el firewall **no** salta el bloqueo geográfico.
 
 Recomendación sin decidir (`capture`): capturar la muestra **después** de que actúe `dlp`.
 Guardarla antes persiste justo lo que la policy de DLP decía anonimizar.
+
+## 4b. DLP — ✅ decidido e implementado
+
+Configura `@axium-lab/euro-pii` **sin depender de él**. `options` es su `AnonymizeOptions`
+campo a campo; `enabled` es nuestro. Todo lo que va dentro de `options` es contrato de
+euro-pii y todo lo de fuera es nuestro, así que un campo que añadamos nunca choca con uno
+que añada el motor.
+
+```jsonc
+"dlp": {
+  "enabled": true,
+  "options": {
+    "countries": ["ES", "GLOBAL"],   // QUÉ buscar: countries, kinds, entities, except (se intersecan)
+    "except": ["DATE_TIME"],
+    "policy": {                      // QUÉ hacer: entities > kinds > default
+      "default": "mask",
+      "kinds":    { "BANK_ACCOUNT": "block" },
+      "entities": { "ES_NIF": "keep" }
+    }
+  }
+}
+```
+
+**Aquí solo se valida la forma**: nombres `^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$` (`ES_NIF`, no
+`dni`), países alfa-2 o `GLOBAL`, el enum de acciones. Copiar el catálogo obligaría a
+publicar cada vez que euro-pii añade una entidad (lo hace en minors).
+
+Decisiones:
+
+- **Mapas por especificidad, no reglas ordenadas**: es como resuelve euro-pii, y así el
+  mapeo es 1:1.
+- **Sin `countries` en `policy`**: país y kind son ejes ortogonales; `ES_NIF` es `ES` y
+  `TAX_ID` a la vez y ninguno es más específico. euro-pii tampoco lo tiene.
+- **`enabled`, `false` por defecto**: permite pausar sin perder la configuración, y `{}`
+  sigue sin hacer nada, como en el resto de secciones (`resolvePolicies` depende de ello).
+- **Conjuntos ordenados y sin duplicados; vacíos rechazados**: en euro-pii un campo omitido
+  es "sin restringir", y un `[]` es ambiguo.
+
+Errores: `dlp.selection_required` (`enabled: true` sin `countries`, `kinds` ni `entities`;
+euro-pii escanearía todo su catálogo, porque `policy` nunca restringe la búsqueda) y
+`dlp.block_excepted` (entidad en `except` con `block` explícito; euro-pii lanza).
+
+### Semántica que el runtime debe implementar
+
+- `if (dlp.enabled) anonymize(text, dlp.options)`. Con `enabled: false` **no se llama**.
+- La existencia de cada nombre se comprueba contra el catálogo de euro-pii (`ENTITY_NAMES`,
+  `supported_kinds()`, `supported_countries()`). Un nombre desconocido con `block` hace
+  **fallar** (fail-closed); con `mask` o `keep`, warning y se filtra antes de llamar.
+- Una selección que queda vacía tras resolver contra el catálogo es un error del core:
+  aquí no se puede saber.
+- Un `block` explícito amplía la búsqueda aunque la selección lo excluya; `mask`/`keep` no.
 
 ## 5. Superficie de la API
 
@@ -273,7 +324,7 @@ obligaría a cambiar de fichero el día que un `interface` tenga que pasar a `ty
 
 ## 6. Errores y warnings
 
-La API ya tiene contrato: `details: [{ field: "dlp.rules.0.category", message }]`,
+La API ya tiene contrato: `details: [{ field: "dlp.options.entities.0", message }]`,
 con `field` como **string con puntos** (se construye con `path.join('.')`, `'(root)'` si
 está vacío) y **varios errores a la vez**.
 
@@ -281,8 +332,8 @@ Propongo emitir ambas formas, para no obligar a nadie a aplanar:
 
 ```ts
 type PolicyIssue = {
-  path:    (string | number)[];   // ["dlp","rules",0,"category"]  → para marcar el campo en el form
-  field:   string;                // "dlp.rules.0.category"        → el contrato HTTP actual
+  path:    (string | number)[];   // ["dlp","options","entities",0]→ para marcar el campo en el form
+  field:   string;                // "dlp.options.entities.0"       → el contrato HTTP actual
   code:    string;                // "invalid_enum"                → estable, para i18n
   message: string;
 };
@@ -305,7 +356,7 @@ Donde está el valor real, más allá de comprobar tipos:
 - `cache.mode: "strict"` ⇒ `ttl_seconds` requerido; `min_similarity` a `null`
 - `cache.mode: "semantic"` ⇒ `ttl_seconds` requerido; `min_similarity` se rellena a `0.95`
 - `geo.on_violation: "block"` ⇒ `geo.allow` no puede estar vacío (bloquearía todo)
-- `dlp.rules[]` ⇒ sin `category` duplicada
+- `dlp.enabled` ⇒ exige selección; `dlp.options.except` ⇒ sin `block` explícito (§4b)
 - `firewall` ⇒ CIDR/IP/dominio bien formados; reglas sombreadas como warning
 - `transformations[]` ⇒ sin `type` duplicado; `options` validado **por tipo**
   (unión discriminada), no como objeto libre
@@ -362,7 +413,7 @@ que el aislamiento entre peticiones lo decide el proxy, no la policy.
 
 Pendientes:
 
-1. **Catálogos**: valores definitivos de `dlp.category`, `dlp.action` y `transformations.type`.
+1. **Catálogos**: valor definitivo de `transformations.type`.
 2. **`transformations[].options`**: qué opciones lleva `pdf_to_markdown`. Sin eso queda como
    objeto libre y se pierde la mitad del valor de validarlo.
 3. **`geo`**: granularidad (alias `EU` + ISO 3166-1, o solo países) y cómo se reparte con

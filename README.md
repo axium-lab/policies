@@ -81,6 +81,34 @@ Rules are ordered: **the first match wins**. `inbound` only accepts `cidr`; `out
 accepts `cidr` and `domain`. Values are canonicalized on validation (`10.0.0.1/8` → `10.0.0.0/8`,
 `WWW.Evil.COM.` → `www.evil.com`).
 
+### `dlp`
+
+Configures [`@axium-lab/euro-pii`](https://www.npmjs.com/package/@axium-lab/euro-pii) without
+depending on it. `options` is euro-pii's `AnonymizeOptions` field for field, so the core passes
+it as-is; `enabled` is ours and decides whether to call at all.
+
+```jsonc
+"dlp": {
+  "enabled": true,
+  "options": {
+    "countries": ["ES", "GLOBAL"],                 // what to scan: countries, kinds, entities, except
+    "policy": {                                    // what to do with each hit
+      "default": "mask",                           // mask | block | keep
+      "kinds":    { "BANK_ACCOUNT": "block" },
+      "entities": { "ES_NIF": "keep" }             // most specific wins: entities > kinds > default
+    }
+  }
+}
+```
+
+```ts
+if (policies.dlp.enabled) anonymize(text, policies.dlp.options);
+```
+
+Only the shape is validated here (`ES_NIF`-style names, ISO alpha-2 or `GLOBAL`, the action
+enum). Whether an entity exists is checked by the core against euro-pii's catalog. `enabled: true`
+requires at least one of `countries`, `kinds` or `entities`: with none, euro-pii scans everything.
+
 The root keeps keys it does not know, so an older deployment does not silently drop a
 section written by a newer one. Inside each known section, an unknown key is an error.
 
@@ -92,7 +120,7 @@ section written by a newer one. Inside each known section, an unknown key is an 
 | `cache` | ✅ |
 | `capture` | ✅ |
 | `geo` | pending |
-| `dlp` | pending |
+| `dlp` | ✅ |
 | `transformations` | pending |
 
 The full design and the decisions behind it are in [DESIGN.md](./DESIGN.md).
