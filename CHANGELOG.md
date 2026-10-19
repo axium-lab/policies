@@ -8,6 +8,8 @@ with pre-1.0 conventions: minor bumps signal BREAKING changes; patch bumps are s
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-10-19
+
 ### Changed
 
 - **BREAKING: `dlp` is now two sections, `dlp_prompt` and `dlp_file`**, with
