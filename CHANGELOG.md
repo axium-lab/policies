@@ -8,6 +8,22 @@ with pre-1.0 conventions: minor bumps signal BREAKING changes; patch bumps are s
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING: `dlp` is now two sections, `dlp_prompt` and `dlp_file`**, with
+  the same shape and no `targets` field. Each target has its own `options` and
+  is enabled or paused on its own. A stored `dlp` section is no longer
+  validated: the root keeps it as an unknown key and the runtime ignores it.
+  Error codes keep the `dlp.` prefix; `field` carries the section
+  (`dlp_prompt.options`). Removed `DLP_TARGETS` and `DlpTarget`;
+  `dlp.targets_required` is gone.
+
+### Added
+
+- **`meta`** on `dlp_prompt` and `dlp_file`: an optional, free-form JSON object
+  (owner, ticket, review date…) that the library stores as-is and never reads.
+  Rejected when it is not an object or holds non-JSON values.
+
 ## [0.1.3] — 2026-10-07
 
 ### Added

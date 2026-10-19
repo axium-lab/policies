@@ -81,16 +81,18 @@ Rules are ordered: **the first match wins**. `inbound` only accepts `cidr`; `out
 accepts `cidr` and `domain`. Values are canonicalized on validation (`10.0.0.1/8` → `10.0.0.0/8`,
 `WWW.Evil.COM.` → `www.evil.com`).
 
-### `dlp`
+### `dlp_prompt` and `dlp_file`
 
-Configures [`@axium-lab/euro-pii`](https://www.npmjs.com/package/@axium-lab/euro-pii) without
-depending on it. `options` is euro-pii's `AnonymizeOptions` field for field, so the core passes
-it as-is; `enabled` and `targets` are ours and decide whether, and on what, to call it.
+Two sections with the same shape, one per target: `dlp_prompt` scans the prompt, `dlp_file`
+scans a file's extracted text. Each is enabled, paused and configured on its own. Both
+configure [`@axium-lab/euro-pii`](https://www.npmjs.com/package/@axium-lab/euro-pii) without
+depending on it: `options` is euro-pii's `AnonymizeOptions` field for field, so the core passes
+it as-is; `enabled` and `meta` are ours.
 
 ```jsonc
-"dlp": {
+"dlp_prompt": {
   "enabled": true,
-  "targets": ["file", "prompt"],                   // file, prompt or both
+  "meta": { "owner": "data-team", "ticket": "AX-123" },  // optional: any JSON object, never read here
   "options": {
     "countries": ["ES", "GLOBAL"],                 // what to scan: countries, kinds, entities, except
     "policy": {                                    // what to do with each hit
@@ -99,19 +101,23 @@ it as-is; `enabled` and `targets` are ours and decide whether, and on what, to c
       "entities": { "ES_NIF": "keep" }             // most specific wins: entities > kinds > default
     }
   }
+},
+"dlp_file": {
+  "enabled": false,                                // paused, configuration kept
+  "options": { "countries": ["ES"], "policy": { "default": "block" } }
 }
 ```
 
 ```ts
-const { enabled, targets, options } = policies.dlp;
-if (enabled && targets?.includes('prompt')) anonymize(prompt, options);
-if (enabled && targets?.includes('file')) anonymize(extractedText, options);
+if (policies.dlp_prompt.enabled) anonymize(prompt, policies.dlp_prompt.options);
+if (policies.dlp_file.enabled) anonymize(extractedText, policies.dlp_file.options);
 ```
 
 Only the shape is validated here (`ES_NIF`-style names, ISO alpha-2 or `GLOBAL`, the action
 enum). Whether an entity exists is checked by the core against euro-pii's catalog. `enabled: true`
-requires at least one target, and at least one of `countries`, `kinds` or `entities`: with none,
-euro-pii scans everything. The same `options` apply to every target.
+requires at least one of `countries`, `kinds` or `entities`: with none, euro-pii scans everything.
+`meta` must be a JSON object (no `Date`, `undefined` or functions) so what you store is what you
+get back; its contents are not validated or interpreted.
 
 The root keeps keys it does not know, so an older deployment does not silently drop a
 section written by a newer one. Inside each known section, an unknown key is an error.
@@ -124,7 +130,8 @@ section written by a newer one. Inside each known section, an unknown key is an 
 | `cache` | ✅ |
 | `capture` | ✅ |
 | `geo` | pending |
-| `dlp` | ✅ |
+| `dlp_prompt` | ✅ |
+| `dlp_file` | ✅ |
 | `transformations` | pending |
 
 The full design and the decisions behind it are in [DESIGN.md](./DESIGN.md).

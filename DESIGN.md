@@ -40,7 +40,8 @@ Datos verificados contra el repo de la API (sesión `api`, solo lectura):
   "version": 1,
   "cache":   { "mode": "off", "ttl_seconds": null },
   "capture": { "samples": false },
-  "dlp":     { "enabled": true, "targets": ["prompt"], "options": { "countries": ["ES"], "policy": { "default": "mask" } } },
+  "dlp_prompt": { "enabled": true, "options": { "countries": ["ES"], "policy": { "default": "mask" } } },
+  "dlp_file":   { "enabled": false, "meta": { "ticket": "AX-123" }, "options": { "countries": ["ES"] } },
   "geo":     { "allow": ["EU"], "on_violation": "block" },
   "transformations": [{ "type": "pdf_to_markdown", "options": {} }],
   "firewall": { /* §4 */ }
@@ -79,8 +80,9 @@ sitio donde se define. **Cada lista hay que validarla antes de congelarla.**
 | `cache.ttl_seconds` | entero 1 – 2 592 000 (30 días), o `null` | ✅ decidido en la fase 2 |
 | `cache.min_similarity` | 0 – 1, default `0.95` | ✅ decidido en la fase 2 |
 | `capture.samples` | `boolean`, default `false` | ✅ decidido en la fase 3 |
-| `dlp.options.*` (entidades, kinds, países) | Solo patrón, sin catálogo | ✅ El catálogo vive en `@axium-lab/euro-pii` (§4b) |
-| `dlp.options.policy.*` (acción) | `mask` \| `block` \| `keep` | ✅ Real: el `Action` de euro-pii |
+| `dlp_*.options.*` (entidades, kinds, países) | Solo patrón, sin catálogo | ✅ El catálogo vive en `@axium-lab/euro-pii` (§4b) |
+| `dlp_*.options.policy.*` (acción) | `mask` \| `block` \| `keep` | ✅ Real: el `Action` de euro-pii |
+| `dlp_*.meta` | objeto JSON libre, opcional | ✅ decidido en la fase 4b: notas que la librería nunca lee |
 | `geo.allow[]` | `EU` + ISO 3166-1 alpha-2 | **Inventado en diseño.** Requisito real: "denegar fuera de Europa" |
 | `geo.on_violation` | `block` \| `log` | Propuesta (`log` añadido para poder desplegar en modo observación) |
 | `transformations[].type` | `pdf_to_markdown`, + ? | Solo ese, en un comentario. **A definir** |
@@ -170,15 +172,20 @@ Guardarla antes persiste justo lo que la policy de DLP decía anonimizar.
 
 ## 4b. DLP — ✅ decidido e implementado
 
+**Dos secciones, `dlp_prompt` y `dlp_file`, con el mismo schema.** Un prompt y un fichero
+rara vez quieren el mismo escaneo (un fichero suele llevar IBANs y direcciones que en un
+prompt no aparecen), y separarlas permite activar o pausar cada destino por su cuenta.
+El fichero del schema es uno (`src/policies/dlp.ts`) exportado con dos claves.
+
 Configura `@axium-lab/euro-pii` **sin depender de él**. `options` es su `AnonymizeOptions`
-campo a campo; `enabled` y `targets` son nuestros. Todo lo que va dentro de `options` es contrato de
+campo a campo; `enabled` y `meta` son nuestros. Todo lo que va dentro de `options` es contrato de
 euro-pii y todo lo de fuera es nuestro, así que un campo que añadamos nunca choca con uno
 que añada el motor.
 
 ```jsonc
-"dlp": {
+"dlp_prompt": {
   "enabled": true,
-  "targets": ["file", "prompt"],     // SOBRE QUÉ: file, prompt o ambos
+  "meta": { "owner": "equipo-datos", "ticket": "AX-123" },   // opcional, objeto JSON libre
   "options": {
     "countries": ["ES", "GLOBAL"],   // QUÉ buscar: countries, kinds, entities, except (se intersecan)
     "except": ["DATE_TIME"],
@@ -188,7 +195,8 @@ que añada el motor.
       "entities": { "ES_NIF": "keep" }
     }
   }
-}
+},
+"dlp_file": { "enabled": false, "options": { "countries": ["ES"], "policy": { "default": "block" } } }
 ```
 
 **Aquí solo se valida la forma**: nombres `^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$` (`ES_NIF`, no
@@ -203,21 +211,31 @@ Decisiones:
   `TAX_ID` a la vez y ninguno es más específico. euro-pii tampoco lo tiene.
 - **`enabled`, `false` por defecto**: permite pausar sin perder la configuración, y `{}`
   sigue sin hacer nada, como en el resto de secciones (`resolvePolicies` depende de ello).
-- **`targets` como lista, una sola `options` para todos**: se descartó un bloque por
-  destino (`{ prompt: {...}, file: {...} }`) por simplicidad. Reglas distintas por destino
-  obligarían a cambiar la forma (breaking).
+- **Una sección por destino, no `targets`** (0.2.0). La 0.1.3 tenía `dlp` con una lista
+  `targets` y una sola `options` para todos; se descartó un bloque por destino "por
+  simplicidad". En cuanto hizo falta escanear cosas distintas en prompt y fichero, esa
+  simplicidad obligaba a romper la forma. Secciones separadas reutilizan todo lo que ya
+  existe (una sección existe solo si se configuró, `resolve` rellena, `strict` dentro).
+  Un documento viejo con `dlp` **no da error**: la raíz lo conserva como clave desconocida
+  y el runtime no lo lee.
+- **`meta`, opcional, objeto JSON libre** (`z.record(z.string(), z.json())`): dónde apuntar
+  quién pidió la policy, un ticket o una fecha de revisión. Se valida que sea un objeto cuyos
+  valores sean JSON puro (nada de `Date`, `undefined` ni funciones), para que lo que entra
+  sea exactamente lo que sale del JSONB. No se rellena, no se canonicaliza y la librería no
+  lo interpreta. Va fuera de `options` por la regla de arriba. Sin tope de tamaño de momento.
 - **Conjuntos ordenados y sin duplicados; vacíos rechazados**: en euro-pii un campo omitido
   es "sin restringir", y un `[]` es ambiguo.
 
-Errores: `dlp.targets_required` (`enabled: true` sin `targets`), `dlp.selection_required` (`enabled: true` sin `countries`, `kinds` ni `entities`;
-euro-pii escanearía todo su catálogo, porque `policy` nunca restringe la búsqueda) y
-`dlp.block_excepted` (entidad en `except` con `block` explícito; euro-pii lanza).
+Errores (el `field` lleva la sección, `dlp_prompt.options` o `dlp_file.options`; el `code`
+es el mismo en ambas): `dlp.selection_required` (`enabled: true` sin `countries`, `kinds` ni
+`entities`; euro-pii escanearía todo su catálogo, porque `policy` nunca restringe la búsqueda)
+y `dlp.block_excepted` (entidad en `except` con `block` explícito; euro-pii lanza).
 
 ### Semántica que el runtime debe implementar
 
-- Por cada destino en `targets`: `anonymize(texto, dlp.options)`. Con `enabled: false`
-  **no se llama**. Un `file` se analiza sobre su texto extraído: si hay `transformations`
-  (p. ej. `pdf_to_markdown`), el DLP va **después**.
+- `dlp_prompt.enabled` ⇒ `anonymize(prompt, dlp_prompt.options)`; `dlp_file.enabled` ⇒
+  `anonymize(textoExtraido, dlp_file.options)`. Con `enabled: false` **no se llama**. Si hay
+  `transformations` (p. ej. `pdf_to_markdown`), el DLP de fichero va **después**.
 - La existencia de cada nombre se comprueba contra el catálogo de euro-pii (`ENTITY_NAMES`,
   `supported_kinds()`, `supported_countries()`). Un nombre desconocido con `block` hace
   **fallar** (fail-closed); con `mask` o `keep`, warning y se filtra antes de llamar.
@@ -330,7 +348,7 @@ obligaría a cambiar de fichero el día que un `interface` tenga que pasar a `ty
 
 ## 6. Errores y warnings
 
-La API ya tiene contrato: `details: [{ field: "dlp.options.entities.0", message }]`,
+La API ya tiene contrato: `details: [{ field: "dlp_prompt.options.entities.0", message }]`,
 con `field` como **string con puntos** (se construye con `path.join('.')`, `'(root)'` si
 está vacío) y **varios errores a la vez**.
 
@@ -338,8 +356,8 @@ Propongo emitir ambas formas, para no obligar a nadie a aplanar:
 
 ```ts
 type PolicyIssue = {
-  path:    (string | number)[];   // ["dlp","options","entities",0]→ para marcar el campo en el form
-  field:   string;                // "dlp.options.entities.0"       → el contrato HTTP actual
+  path:    (string | number)[];   // ["dlp_prompt","options","entities",0] →  para marcar el campo en el form
+  field:   string;                // "dlp_prompt.options.entities.0" → el contrato HTTP actual
   code:    string;                // "invalid_enum"                → estable, para i18n
   message: string;
 };
@@ -362,7 +380,7 @@ Donde está el valor real, más allá de comprobar tipos:
 - `cache.mode: "strict"` ⇒ `ttl_seconds` requerido; `min_similarity` a `null`
 - `cache.mode: "semantic"` ⇒ `ttl_seconds` requerido; `min_similarity` se rellena a `0.95`
 - `geo.on_violation: "block"` ⇒ `geo.allow` no puede estar vacío (bloquearía todo)
-- `dlp.enabled` ⇒ exige `targets` y selección; `dlp.options.except` ⇒ sin `block` explícito (§4b)
+- `dlp_*.enabled` ⇒ exige selección; `dlp_*.options.except` ⇒ sin `block` explícito; `dlp_*.meta` ⇒ objeto JSON (§4b)
 - `firewall` ⇒ CIDR/IP/dominio bien formados; reglas sombreadas como warning
 - `transformations[]` ⇒ sin `type` duplicado; `options` validado **por tipo**
   (unión discriminada), no como objeto libre

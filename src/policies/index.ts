@@ -2,7 +2,7 @@ import type { z } from 'zod';
 
 import { cacheSection } from './cache.js';
 import { captureSection } from './capture.js';
-import { dlpSection } from './dlp.js';
+import { dlpFileSection, dlpPromptSection } from './dlp.js';
 import { firewallSection } from './firewall.js';
 
 /**
@@ -12,7 +12,8 @@ import { firewallSection } from './firewall.js';
 export const SECTIONS = {
   cache: cacheSection,
   capture: captureSection,
-  dlp: dlpSection,
+  dlp_prompt: dlpPromptSection,
+  dlp_file: dlpFileSection,
   firewall: firewallSection,
 } as const;
 

@@ -4,8 +4,6 @@ import type { PolicySection } from '../types/section.js';
 
 /** Mirrors euro-pii's `Action`. Adding one before the engine honours it accepts policies nobody enforces. */
 export const DLP_ACTIONS = ['mask', 'block', 'keep'] as const;
-/** What the core runs euro-pii over. A file is scanned on its extracted text. */
-export const DLP_TARGETS = ['file', 'prompt'] as const;
 
 /**
  * Shape only. Whether `ES_NIF` exists is the core's call against euro-pii's live
@@ -65,21 +63,16 @@ const schema = z
   .strictObject({
     /** Off by default, so pausing DLP keeps its configuration and `{}` changes nothing. */
     enabled: z.boolean().default(false),
-    /** One configuration for every target: what is scanned and done is the same on each. */
-    targets: setOf(z.enum(DLP_TARGETS)),
+    /**
+     * Free-form notes the library never reads: who asked for this, a ticket, a
+     * review date. Must be a JSON object so what goes in is exactly what comes
+     * back out of the JSONB column.
+     */
+    meta: z.record(z.string(), z.json()).optional(),
     options: options.prefault({}),
   })
   .superRefine((value, ctx) => {
     const { countries, kinds, entities, except, policy } = value.options;
-
-    if (value.enabled && !value.targets) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['targets'],
-        message: 'An enabled DLP needs at least one target: file, prompt or both',
-        params: { code: 'dlp.targets_required' },
-      });
-    }
 
     // euro-pii scans all of its catalog when nothing is selected.
     if (value.enabled && !countries && !kinds && !entities) {
@@ -106,9 +99,18 @@ const schema = z
 
 export type DlpPolicy = z.infer<typeof schema>;
 export type DlpAction = (typeof DLP_ACTIONS)[number];
-export type DlpTarget = (typeof DLP_TARGETS)[number];
 
-export const dlpSection = {
-  key: 'dlp',
+/**
+ * One section per target, same schema. A prompt and a file rarely want the same
+ * scan, and separate sections let each be paused on its own.
+ */
+export const dlpPromptSection = {
+  key: 'dlp_prompt',
   schema,
-} as const satisfies PolicySection<'dlp', typeof schema>;
+} as const satisfies PolicySection<'dlp_prompt', typeof schema>;
+
+/** A file is scanned on its extracted text, after any transformation. */
+export const dlpFileSection = {
+  key: 'dlp_file',
+  schema,
+} as const satisfies PolicySection<'dlp_file', typeof schema>;
