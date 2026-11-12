@@ -1,6 +1,6 @@
 {
   "name": "@axium-lab/policies",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Isomorphic, schema-driven validation and composition of versioned policy documents",
   "license": "MIT",
   "author": "Axium Lab",

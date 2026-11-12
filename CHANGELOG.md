@@ -8,6 +8,8 @@ with pre-1.0 conventions: minor bumps signal BREAKING changes; patch bumps are s
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-11-12
+
 ### Added
 
 - **`logs`** policy: `enabled` (default `true`) switches the stored request
