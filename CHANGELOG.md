@@ -8,6 +8,14 @@ with pre-1.0 conventions: minor bumps signal BREAKING changes; patch bumps are s
 
 ## [Unreleased]
 
+### Added
+
+- **`logs`** policy: `enabled` (default `true`) switches the stored request
+  record on or off; `input` and `output` (default `false`) add the payload and
+  the response to it. The defaults match what the proxy did before the section
+  existed. `enabled: false` keeps `input` and `output` as configured. Exports
+  `LogsPolicy`.
+
 ## [0.2.0] — 2026-10-19
 
 ### Changed

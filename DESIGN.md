@@ -44,6 +44,7 @@ Datos verificados contra el repo de la API (sesión `api`, solo lectura):
   "dlp_file":   { "enabled": false, "meta": { "ticket": "AX-123" }, "options": { "countries": ["ES"] } },
   "geo":     { "allow": ["EU"], "on_violation": "block" },
   "transformations": [{ "type": "pdf_to_markdown", "options": {} }],
+  "logs":    { "enabled": true, "input": false, "output": false },
   "firewall": { /* §4 */ }
 }
 ```
@@ -80,6 +81,8 @@ sitio donde se define. **Cada lista hay que validarla antes de congelarla.**
 | `cache.ttl_seconds` | entero 1 – 2 592 000 (30 días), o `null` | ✅ decidido en la fase 2 |
 | `cache.min_similarity` | 0 – 1, default `0.95` | ✅ decidido en la fase 2 |
 | `capture.samples` | `boolean`, default `false` | ✅ decidido en la fase 3 |
+| `logs.enabled` | `boolean`, default `true` | ✅ decidido: es lo que el proxy ya hacía |
+| `logs.input`, `logs.output` | `boolean`, default `false` | ✅ decidido |
 | `dlp_*.options.*` (entidades, kinds, países) | Solo patrón, sin catálogo | ✅ El catálogo vive en `@axium-lab/euro-pii` (§4b) |
 | `dlp_*.options.policy.*` (acción) | `mask` \| `block` \| `keep` | ✅ Real: el `Action` de euro-pii |
 | `dlp_*.meta` | objeto JSON libre, opcional | ✅ decidido en la fase 4b: notas que la librería nunca lee |
@@ -169,6 +172,23 @@ Un `allow` explícito en el firewall **no** salta el bloqueo geográfico.
 
 Recomendación sin decidir (`capture`): capturar la muestra **después** de que actúe `dlp`.
 Guardarla antes persiste justo lo que la policy de DLP decía anonimizar.
+
+**`logs`** decide qué persiste el proxy de cada petición: `enabled` es el registro (los
+metadatos), `input` y `output` le añaden el payload y la respuesta.
+
+- **`enabled` es `true` por defecto**, al revés que el resto de interruptores: el proxy ya
+  guardaba el registro antes de que existiera la sección, y un documento sin configurar tiene
+  que seguir haciéndolo.
+- **`enabled: false` no es un error con `input` u `output` a `true`.** Es una pausa, como en
+  `dlp_*`: no se guarda nada y la elección se conserva para cuando se vuelva a encender.
+- **Con `input: true` se guarda lo que sale de `dlp_prompt`**, nunca el original. Aquí ya no es
+  una recomendación: guardar antes persiste lo que DLP debía enmascarar.
+- **Fuera de su alcance**: la medición de consumo y los eventos de bloqueo de firewall y DLP.
+  No son logs de petición y esta sección no los apaga; si lo hiciera, apagar logs serviría para
+  ocultar bloqueos.
+- **Sección aparte de `capture`** y con nombres neutros (`input` / `output`, no `prompt` /
+  `response`) porque las policies no son solo para peticiones LLM. Deja sitio para una
+  retención (`retention_days`) cuando haga falta.
 
 ## 4b. DLP — ✅ decidido e implementado
 

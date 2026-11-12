@@ -119,6 +119,37 @@ requires at least one of `countries`, `kinds` or `entities`: with none, euro-pii
 `meta` must be a JSON object (no `Date`, `undefined` or functions) so what you store is what you
 get back; its contents are not validated or interpreted.
 
+### `logs`
+
+What the proxy stores about each request. `enabled` is the request record itself; `input` and
+`output` add the payload and the response to it.
+
+```jsonc
+"logs": {
+  "enabled": true,   // store the request record
+  "input": false,    // also store the payload
+  "output": false    // also store the response
+}
+```
+
+```ts
+if (policies.logs.enabled) {
+  saveLog({
+    ...record,
+    input: policies.logs.input ? inputAfterDlp : undefined,
+    output: policies.logs.output ? output : undefined,
+  });
+}
+```
+
+The defaults are what the proxy did before this section existed, so an unconfigured document
+keeps logging the record without its content. `enabled: false` stores nothing and keeps `input`
+and `output` as they were, so switching logs back on restores the same choice.
+
+Store the input **after** DLP has run, never the original. This section does not cover usage
+metering or firewall and DLP block events: those are not request logs and are not switched off
+here.
+
 The root keeps keys it does not know, so an older deployment does not silently drop a
 section written by a newer one. Inside each known section, an unknown key is an error.
 
@@ -132,6 +163,7 @@ section written by a newer one. Inside each known section, an unknown key is an 
 | `geo` | pending |
 | `dlp_prompt` | ✅ |
 | `dlp_file` | ✅ |
+| `logs` | ✅ |
 | `transformations` | pending |
 
 The full design and the decisions behind it are in [DESIGN.md](./DESIGN.md).

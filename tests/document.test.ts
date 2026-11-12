@@ -68,6 +68,7 @@ describe('assert y resolve', () => {
         inbound: { default_action: 'allow', rules: [] },
         outbound: { default_action: 'allow', rules: [] },
       },
+      logs: { enabled: true, input: false, output: false },
     });
   });
 

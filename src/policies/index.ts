@@ -4,6 +4,7 @@ import { cacheSection } from './cache.js';
 import { captureSection } from './capture.js';
 import { dlpFileSection, dlpPromptSection } from './dlp.js';
 import { firewallSection } from './firewall.js';
+import { logsSection } from './logs.js';
 
 /**
  * Every policy the document knows about. Adding one is a new file in this folder
@@ -15,6 +16,7 @@ export const SECTIONS = {
   dlp_prompt: dlpPromptSection,
   dlp_file: dlpFileSection,
   firewall: firewallSection,
+  logs: logsSection,
 } as const;
 
 export type SectionKey = keyof typeof SECTIONS;
